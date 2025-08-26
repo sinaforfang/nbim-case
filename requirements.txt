@@ -1,0 +1,19 @@
+# Data handling
+pandas>=2.0.0
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# LLM and LangChain
+langchain>=0.2.0
+langchain-openai>=0.1.0
+langchain-core>=0.2.0
+
+# OpenAI client (LangChain depends on this, but include explicitly)
+openai>=1.30.0
+
+# Schema validation
+pydantic>=2.0
+
+# Optional: rich output formatting (for debugging / pretty print)
+tabulate>=0.9.0
