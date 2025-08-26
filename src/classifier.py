@@ -13,7 +13,6 @@ class ClassificationResult(BaseModel):
     suggested_fix: str
     priority: int
     evidence_fields: List[str] = Field(default_factory=list)
-    notes: str = ""
 
 def classify_one_payload(llm: ChatOpenAI, payload: dict) -> ClassificationResult:
     parser = PydanticOutputParser(pydantic_object=ClassificationResult)
@@ -29,8 +28,8 @@ def classify_payloads(payloads: List[dict]) -> List[ClassificationResult]:
     results: List[ClassificationResult] = []
     for p in payloads:
         # include fields that appear different as evidence
-        p = dict(p) 
-        p["evidence_fields"] = p.get("different_fields", []) # which fields triggered this reasoning
+        p = dict(p)
+        p["evidence_fields"] = p.get("different_fields", [])
         res = classify_one_payload(llm, p)
         results.append(res)
     return results # a list of pydantic objects

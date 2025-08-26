@@ -13,10 +13,7 @@ def load_csvs(nbim_path: str, custody_path: str):
     nbim = read_semicolon(nbim_path)
     custody = read_semicolon(custody_path)
     
-    print("Files read")
-
     # rename the columns
     nb = to_canonical(nbim, NBIM_MAP)
     cu = to_canonical(custody, CUST_MAP)
-    print("Mapping done")
     return nb, cu

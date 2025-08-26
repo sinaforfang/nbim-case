@@ -14,12 +14,11 @@ def build_classify_prompt(parser):
         "- If nothing material differs give reason_code='MATCH'.\n"
         "- Keep outputs neutral and max 2 sentences per explanation/fix.\n\n"
         "Allowed reason_code tags:\n"
-        "MISSING_ON_NBIM, MISSING_ON_CUSTODY,\n"
-        "PAY_DATE_MISMATCH, EXDATE_MISMATCH, EVENT_DATE_MISMATCH,\n"
+        "PAY_DATE_MISMATCH, EXDATE_MISMATCH,\n"
         "GROSS_QC_MISMATCH, NET_AMOUNT_MISMATCH,\n"
-        "TAX_RATE_MISMATCH, TAX_AMOUNT_MISMATCH, CURRENCY_CODE_MISMATCH\n"
-        "DIVIDEND_RATE_MISMATCH, NOMINAL_POSITION_MISMATCH, SHARES_ON_LOAN,\n"
-        "ADR_FEE, LOCAL_TAX_APPLIED, RESTITUTION_MISMATCH, MATCH\n"
+        "TAX_RATE_MISMATCH, TAX_AMOUNT_MISMATCH, CURRENCY_CODE_MISMATCH,\n"
+        "DIVIDEND_RATE_MISMATCH, NOMINAL_POSITION_MISMATCH,\n"
+        "MATCH\n"
         "{format_instructions}"
     )
 
@@ -29,8 +28,9 @@ def build_classify_prompt(parser):
         "Return STRICT JSON for a single payload.\n\n"
         "PAYLOAD:\n{payload_json}"
     )
+
     # combine system + human into a template with placeholders
-    prompt = ChatPromptTemplate.from_messages([("system", system), ("human", user)]) 
+    prompt = ChatPromptTemplate.from_messages([("system", system), ("human", user)])
     # fills in the format_instructions based on  the class ClassificationResult
     prompt = prompt.partial(format_instructions=parser.get_format_instructions())
     return prompt

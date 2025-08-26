@@ -13,9 +13,9 @@ NBIM_MAP = {
     "NET_AMOUNT_QUOTATION": "net_qc",
     "NET_AMOUNT_SETTLEMENT": "net_sc",
     "WTHTAX_COST_QUOTATION": "tax_amt",
-    #"WTHTAX_RATE": "tax_rate",
+    # "WTHTAX_RATE": "tax_rate",
     "TOTAL_TAX_RATE": "tax_rate",
-    #"AVG_FX_RATE_QUOTATION_TO_PORTFOLIO": "fx_rate",  uses NOK
+    # "AVG_FX_RATE_QUOTATION_TO_PORTFOLIO": "fx_rate",  uses NOK
     "QUOTATION_CURRENCY": "qc",
     "SETTLEMENT_CURRENCY": "sc",
 }
@@ -23,9 +23,9 @@ NBIM_MAP = {
 CUST_MAP = {
     "COAC_EVENT_KEY": "event_key",
     "ISIN": "isin",
-    #"EX_DATE": "ex_date", two of ex date
+    # "EX_DATE": "ex_date",  two ex date
     "EVENT_EX_DATE": "ex_date",
-    #"PAY_DATE": "pay_date", two of pay date
+    # "PAY_DATE": "pay_date", two pay date
     "EVENT_PAYMENT_DATE": "pay_date",
     "CUSTODIAN": "custodian",
     "CUSTODY": "account",
@@ -35,8 +35,8 @@ CUST_MAP = {
     "NET_AMOUNT_QC": "net_qc",
     "NET_AMOUNT_SC": "net_sc",
     "TAX": "tax_amt",
-    "TAX_RATE": "tax_rate", 
-    #"FX_RATE": "fx_rate", uses USD
+    "TAX_RATE": "tax_rate",
+    # "FX_RATE": "fx_rate",  # uses USD
     "CURRENCIES": "qc",
     "SETTLED_CURRENCY": "sc",
 }
@@ -48,25 +48,30 @@ def to_canonical(df: pd.DataFrame, mapping: dict) -> pd.DataFrame:
     # return a df with consistent canonical schema based on nbim and custody using mapping
     out = df.copy()
     out.columns = [c.strip().upper() for c in out.columns]
-    use = [c for c in out.columns if c in mapping] # keep only the ones in mapping
-    out = out[use].rename(columns=mapping) # rename the columns
-    # fill missing expected columns
+    use = [c for c in out.columns if c in mapping]
+    out = out[use].rename(columns=mapping)
+
+    # ensure full canonical set fill missing with NA
     for col in set(NBIM_MAP.values()) | set(CUST_MAP.values()):
         if col not in out.columns:
             out[col] = pd.NA
+
     # parse dates to datetime
     for c in DATE_COLS:
         out[c] = pd.to_datetime(out[c], errors="coerce", utc=True, dayfirst=True) # errors invalid values become NaT
+
     # numeric coercion
     for c in NUM_COLS:
         out[c] = pd.to_numeric(out[c], errors="coerce")
-    # strings tidy
-    for c in ["qc","sc","custodian","isin"]:
+
+    # tidy strings
+    for c in ["qc","sc","custodian","isin","account"]:
         out[c] = out[c].astype(str).str.strip().str.upper()
+
     # keep only the first currency as the other one is in sc
     if "qc" in out.columns:
         out["qc"] = out["qc"].str.split(" ").str[0]
-        # turn empty strings into <NA>
+        # turn empty strings into NA
         out["qc"] = out["qc"].where(out["qc"].str.len() > 0, pd.NA)
-    
+
     return out

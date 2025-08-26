@@ -1,68 +1,43 @@
-import os
+# main.py
 import json
-import pandas as pd
-from pprint import pprint
+from langchain_openai import ChatOpenAI
+from langchain.agents import create_tool_calling_agent, AgentExecutor
 
-from src.loader import load_csvs
-from src.detector import pair_and_build_payloads
-from src.classifier import classify_payloads
-
-# Paths to your CSVs
-NBIM_PATH = "data/NBIM_Dividend_Bookings.csv"
-CUST_PATH = "data/CUSTODY_Dividend_Bookings.csv"
-
-# Output folder
-OUT_DIR = "outputs"
-os.makedirs(OUT_DIR, exist_ok=True)
+from src.config import MODEL_NAME, TEMPERATURE, DEFAULT_TOP_K, DEFAULT_SAMPLE_SIZE, OUT_DIR
+from src.tools import detect_tool, classify_batch_tool, save_tool
+from src.agent_prompt import build_agent_prompt
 
 def main():
-    # 1) Load and normalize
-    nb, cu = load_csvs(NBIM_PATH, CUST_PATH)
+    # hard-coded defaults
+    nbim_path = "data/NBIM_Dividend_Bookings.csv"
+    custody_path = "data/CUSTODY_Dividend_Bookings.csv"
+    sample_size = DEFAULT_SAMPLE_SIZE
+    top_k = DEFAULT_TOP_K
+    out_dir = OUT_DIR
 
-    # 2) Build deterministic diffs (sample_size large -> take all)
-    payloads = pair_and_build_payloads(nb, cu, sample_size=999999)
-    if not payloads:
-        print("No matched rows on event_key. Consider adding a fallback join on (ISIN, pay_date).")
-        return
+    llm = ChatOpenAI(model=MODEL_NAME, temperature=TEMPERATURE)
+    tools = [detect_tool, classify_batch_tool, save_tool]
+    prompt = build_agent_prompt()
 
-    # 3) LLM classify + explain + suggest fix
-    results = classify_payloads(payloads)
+    # create agent
+    agent = create_tool_calling_agent(llm=llm, tools=tools, prompt=prompt)
+    executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 
-    # 4) Build compact summary table
-    rows = []
-    for payload, res in zip(payloads, results):
-        rows.append({
-            "event_key": payload.get("event_key"),
-            "account": payload.get("account"),
-            "columns_different": payload.get("different_fields"),
-            "cash_impact": payload.get("cash_impact"),
-            "reason_code": res.reason_code,
-            "priority": res.priority,
-            "explanation": res.explanation,
-            "suggested_fix": res.suggested_fix
-        })
-    summary = pd.DataFrame(rows).sort_values(["priority","cash_impact"], ascending=[False, False])
+    run_params = {
+        "nbim_path": nbim_path,
+        "custody_path": custody_path,
+        "sample_size": sample_size,
+        "top_k": top_k,
+        "out_dir": out_dir,
+    }
 
-    # 5) Save outputs: CSV (summary) + JSONL (detailed)
-    summary_csv = os.path.join(OUT_DIR, "recon_summary.csv")
-    details_jsonl = os.path.join(OUT_DIR, "recon_details.jsonl")
+    # only 'input' required
+    result = executor.invoke({"input": json.dumps(run_params)})
 
-    # CSV summary
-    summary.to_csv(summary_csv, index=False)
-
-    # JSONL details: include full payload (diffs, fields) + classification
-    with open(details_jsonl, "w", encoding="utf-8") as f:
-        for payload, res in zip(payloads, results):
-            record = {
-                "payload": payload,                    # deterministic event/row payload + diffs
-                "classification": res.model_dump()     # reason_code, explanation, priority, etc.
-            }
-            f.write(json.dumps(record, default=str) + "\n")
-
-    # 6) Console printout
-    print("\n=== Reconciliation Summary ===")
-    print(summary.to_string(index=False))
-    print(f"\nSaved:\n- {summary_csv}\n- {details_jsonl}")
+    print("\n=== Agent finished ===")
+    print(result.get("output", ""))
 
 if __name__ == "__main__":
     main()
+
+
