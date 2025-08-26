@@ -18,6 +18,7 @@ class ClassificationResult(BaseModel):
 def classify_one_payload(llm: ChatOpenAI, payload: dict) -> ClassificationResult:
     parser = PydanticOutputParser(pydantic_object=ClassificationResult)
     prompt = build_classify_prompt(parser)
+    # produce the actual system message + human message with all variables filled in
     messages = prompt.format_messages(payload_json=json.dumps(payload, default=str))
     response = llm.invoke(messages)
     return parser.parse(response.content)

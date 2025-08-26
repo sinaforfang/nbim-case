@@ -29,7 +29,8 @@ def build_classify_prompt(parser):
         "Return STRICT JSON for a single payload.\n\n"
         "PAYLOAD:\n{payload_json}"
     )
-
-    prompt = ChatPromptTemplate.from_messages([("system", system), ("human", user)])
+    # combine system + human into a template with placeholders
+    prompt = ChatPromptTemplate.from_messages([("system", system), ("human", user)]) 
+    # fills in the format_instructions based on  the class ClassificationResult
     prompt = prompt.partial(format_instructions=parser.get_format_instructions())
     return prompt
