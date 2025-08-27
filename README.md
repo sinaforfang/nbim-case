@@ -4,7 +4,7 @@
 
 ---
 
-## Problem Statement
+## Overview of the case
 
 Given the two csv exports **NBIM_Dividend_Bookings.csv** and **CUSTODY_Dividend_Bookings.csv** reconcile dividend **entitlements** per event and account:
 
@@ -19,7 +19,7 @@ This repo implements that brief as an **agent-based** system with deterministic 
 
 ## Data & Canonical Schema
 
-Two inputs (semicolon-separated csv):
+Two inputs:
 - `data/NBIM_Dividend_Bookings.csv`
 - `data/CUSTODY_Dividend_Bookings.csv`
 
@@ -39,10 +39,10 @@ The detector joins NBIM and Custody **on (`event_key`, `account`)** using an **i
 Per matched row it computes numeric diffs and flags:
 
 - Amounts: `gross_qc_diff`, `net_qc_diff`, `net_sc_diff`, `tax_amt_diff`, `tax_rate_diff`, `nominal_diff`, `div_ps_diff`
-- Currencies: `qc_mismatch`, `sc_mismatch` (0/1 flags)
+- Currencies: `qc_mismatch`, `sc_mismatch` (boolean)
 - Dates: `pay_date_days_diff`, `ex_date_days_diff` (in days)
 
-The payload for the LLM includes both sides’ values, the diffs, `different_fields` list, and a coarse **`cash_impact`** proxy = **max absolute numeric diff**. This is a very simplified method and should be improved in the future.
+The payload for the LLM includes both sides’ values, the diffs, `different_fields` list, and a coarse **`cash_impact`** proxy = **max absolute numeric diff**. 
 
 See `src/detector.py`.
 
@@ -57,7 +57,7 @@ We call OpenAI `gpt-4o-mini` with a strict Pydantic schema:
   "reason_code": "string",
   "explanation": "string",
   "suggested_fix": "string",
-  "priority": 1|2|3,
+  "priority": 3,
   "evidence_fields": ["net_qc", "tax_amt", "fx_rate"]
 }
 ```
@@ -78,6 +78,35 @@ Each reconciliation is classified into one of the following **reason codes**. Th
 - **DIVIDEND_RATE_MISMATCH** – Dividend per share (DPS) differs.  
 - **NOMINAL_POSITION_MISMATCH** – Shareholding quantity or nominal basis differs.  
 - **MATCH** – No material differences detected; the records reconcile.  
+
+---
+
+## Prompt Design
+
+The LLM is guided by a carefully constructed prompt that enforces structured, neutral, and consistent outputs.  
+The prompt contains two parts:
+
+- **System message** – Sets the role of the assistant as a cautious dividend reconciliation agent.  
+  - Instructs the model to classify mismatches, explain briefly, and suggest a fix.  
+  - Enforces rules such as:  
+    - Use only values present in the payload.  
+    - Do not hallucinate numbers or dates.  
+    - Keep explanations to max 2 sentences.  
+    - Assign `priority` based on `cash_impact`.  
+  - Defines the **allowed reason_code tags** (e.g., `GROSS_QC_MISMATCH`, `TAX_RATE_MISMATCH`, `NOMINAL_POSITION_MISMATCH`).  
+
+- **User message** – Supplies the JSON payload for a specific dividend event and asks for strict JSON output.  
+  Example structure:  
+  ```json
+  {
+    "reason_code": "NET_AMOUNT_MISMATCH",
+    "explanation": "The net amounts differ between NBIM and Custody.",
+    "suggested_fix": "Verify the tax rate and update records.",
+    "priority": 3,
+    "evidence_fields": ["net_qc", "tax_amt", "tax_rate"]
+  }
+
+The Pydantic schema (`ClassificationResult`) ensures the model adheres to this format.
 
 ---
 
@@ -138,6 +167,69 @@ Two outputs are generated for each run:
 
 ---
 
+## Analysis & Recommendations
+
+### Innovative Use Cases
+
+While the current implementation focuses on dividend reconciliation, the same framework can be applied more broadly across NBIM’s operational processes:
+
+- **Other corporate actions** – Extend to stock splits, mergers, or rights issues using the same canonical schema + detection + classification pipeline.  
+- **Real-time monitoring** – Adapt the agent to run continuously on streaming custody feeds, flagging breaks in near real time.  
+- **Cross-system reconciliations** – Apply the same approach to reconcile between additional internal systems/records and other external data providers.  
+- **Create an autonomous system** – Use AI agent to go through the output created and take actions needed to correct the mistake. To reduse risk it can come with a suggestion that a human need to verify.
+- **Other repetetative tasks** - Create similar AI agents to solve other repetetative tasks which are now done manually.
+
+---
+
+### Risk Assessment
+
+Several risks arise when introducing a LLM-powered reconciliation system:
+
+- **LLM-specific risks**  
+  - Hallucinating or imprecise explanations  
+  - Misclassification of root cause (e.g., tagging as `NET_AMOUNT_MISMATCH` instead of `TAX_RATE_MISMATCH`)  
+  - High or unpredictable API costs  
+
+- **Data risks**  
+  - Incorrect join keys creating false mismatches  
+  - Missing relevant data to make correct conclusions
+  - Missing fields or inconsistent custody formats  
+
+- **Operational risks**  
+  - Over-reliance on AI for explanations without human validation  
+  - Analysts losing trust if results appear inconsistent
+  - Lack of reproducibility if prompts or models change over time  
+
+- **Compliance risks**  
+  - Audit requirements demand explainability and traceability  
+  - Sensitive financial data must be handled securely (data privacy/leakage prevention)
+
+---
+
+### Mitigation Strategies
+
+To address these risks, the following measures are recommended:
+
+- **LLM control**  
+  - Constrain outputs with a strict Pydantic schema.  
+  - Keep LLM focused on classification/explanation, not raw diff detection (done deterministically).  
+  - Use cost guardrails: classify only top-K mismatches, small max token size.  
+
+- **Data quality**  
+  - Continue canonicalization and validation of all key columns.  
+  - Add tolerance rules for small rounding differences.  
+
+- **Operational resilience**  
+  - Always produce both summary (csv) and detailed (json) outputs for audit.  
+  - Ensure a human-in-the-loop for high-priority mismatches.  
+  - Version control prompts and schema so results are reproducible over time.  
+
+- **Compliance & security**  
+  - Keep sensitive data anonymized or masked in test runs.  
+  - Document decisions in the audit log (jsonl serves this purpose).  
+
+---
+
 ## Assumptions & Limitations
 - **Only mapped columns** - Only columns found in both csv files are included. This means that some errors can be missed, and that some explainations may be wrong or lack relevant information.
 - **Inner join only** – The reconciliation only considers matched `(event_key, account)` pairs. 
@@ -145,6 +237,9 @@ Two outputs are generated for each run:
 - **FX handling** – Only basic QC/SC currency mismatches are flagged. No normalization or FX rate comparison is performed as they from my understanding are based on different currencies.  
 - **Scope restrictions** – Fields such as shares on loan, restitution, and local tax are not included in the current implementation as they only occur in one df and therefore not causing a direct mismatch.  
 - **LLM explanations** – Constrained to short, neutral sentences, but may occasionally produce imprecise wording (e.g., describing a gross difference as net).  
+- **Improved AI agent** - The existing AI agent is following a strict and quite simple step by step guide. By having more information about the logic behind solving the mismatches it is possible to create a more complex and autonomous AI agent.
+
+---
 
 ## Future Enhancements
 
@@ -153,6 +248,7 @@ Two outputs are generated for each run:
 - **Tolerance rules** – Add configurable tolerances for small rounding differences.  
 - **Expanded taxonomy** – Incorporate additional scenarios such as shares on loan, restitution, and local tax adjustments.  
 - **Prompt refinement** – Guide the LLM to prioritize root cause tags (e.g., classify as `TAX_RATE_MISMATCH` instead of `NET_AMOUNT_MISMATCH` when the tax rate difference is the driver).  
+- **Incorporate additional tools** - Provide the agent with additional tools to analyse what is causing the mistake and how to correct it. 
 
 ---
 
@@ -166,7 +262,7 @@ Two outputs are generated for each run:
    pip install -r requirements.txt
     ```
 2. **Set API key**
- Create an OpenAI API key and create a .env file in the repo root:
+    Create an OpenAI API key and create a .env file in the repo root:
     ```
     OPENAI_API_KEY=sk-...
     ```
