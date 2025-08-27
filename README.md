@@ -1,6 +1,6 @@
 # LLM-Powered Dividend Reconciliation System
 
-> Agent that reconciles NBIM vs Custody dividend bookings, **detects** mismatches, **explains** the root cause, and **suggests** a fix by producing structured outputs saved to .
+> AI Agent that reconciles NBIM vs Custody dividend bookings, **detects** mismatches, **explains** the root cause, and **suggests** a fix by producing structured outputs (summary and details) saved to csv and jsonl files.
 
 ---
 
